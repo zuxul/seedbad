@@ -1,4 +1,7 @@
 
+// желаемую температуру будем хранить в энергонезависимой памяти
+#include <EEPROM.h>
+
 // Термометр HTU21D
 // Connect Vin to 3-5VDC (зеленый)
 // Connect GND to ground (коричневый)
@@ -43,7 +46,9 @@ StateView state = MAIN_VIEW;
 char error_msg[16 + 1]  = {0};
 
 bool heater_state = false;
-int required_temp = 18; // требуемая миимальная температура (берем из памяти)
+unsigned int required_temp = 0; // требуемая миимальная температура (берем из памяти, минимальная 1, максимум 30)
+const unsigned int max_temp = 30;
+const unsigned int min_temp = 1;
 float current_temp = 0.f; // температура на датчике
 float display_temp = 0.f; // температура отображаемая на экране
 float current_humidity = 0.f; // влажность на датчике
@@ -52,6 +57,8 @@ float display_humidity = 0.f; // влажность отображаемая н�
 const float DELTA_TEMP = 1.f; // чтобы постоянно не включался выключался обогревател будем сравнивать как t+delta | t-delta
 
 unsigned long last_query_sensor = 0; // время последнего опроса датчик температуры+влажности
+unsigned long save_temp_to_eeprom = 0; // время, когда нужно сохранить значение required_temp в память
+const unsigned int save_temp_pause = 5000;
 
 void DebugPrint(const char* str) {
   Serial.println(str);
@@ -88,11 +95,23 @@ void Update()
       }
     }
   }
+
+  if (save_temp_to_eeprom != 0 && save_temp_to_eeprom < t) {
+    save_temp_to_eeprom = 0;
+    EEPROM.update(0, (char)required_temp);
+    DebugPrint("save required temperature");
+  }
 }
 
 void PrintRequireTemperature() {
-  char str[8] = {0};
-  sprintf(str, "%i C", required_temp);
+  char str[16] = {0};
+  const char* format = "   %i C   ";
+  if (required_temp == min_temp) {
+    format = "%i C (min)";
+  } else if (required_temp == max_temp) {
+    format = "%i C (max)";
+  }
+  sprintf(str, format, required_temp);
   lcd.setCursor((15 - strlen(str)) / 2, 1);
   lcd.print(str);
   DebugPrint(str);
@@ -150,8 +169,7 @@ void SelectBtnClick() {
   if (state == MAIN_VIEW) {
     state = TEMPERATURE;
     ApplyStateDisplay();
-  } else
-  if (state == TEMPERATURE) {
+  } else if (state == TEMPERATURE) {
     state = MAIN_VIEW;
     ApplyStateDisplay();
   }
@@ -160,22 +178,37 @@ void SelectBtnClick() {
 void PlusBtnClick() {
   DebugPrint("click plus button");
   if (state == TEMPERATURE) {
-    required_temp--;
-    PrintRequireTemperature();
+    if (required_temp < max_temp) {
+      required_temp++;
+      PrintRequireTemperature();
+    }
+    save_temp_to_eeprom = millis() + save_temp_pause;
   }
 }
 
 void MinusBtnClick() {
   DebugPrint("click minus button");
   if (state == TEMPERATURE) {
-    required_temp++;
-    PrintRequireTemperature();
+    if (required_temp > min_temp) {
+      required_temp--;
+      PrintRequireTemperature();
+    }
+    save_temp_to_eeprom = millis() + save_temp_pause;
   }
 }
 
 void setup() {
   Serial.begin(9600);
   DebugPrint("start setup function");
+
+  required_temp = (int)EEPROM.read(0);
+  if (required_temp == 0) {
+    required_temp = 20;
+  } else if (required_temp < min_temp) {
+    required_temp = min_temp;
+  } else if (required_temp > max_temp) {
+    required_temp = max_temp;
+  }
 
   lcd.begin(16, 2);
 
