@@ -1,5 +1,5 @@
 
-#define DEBUG
+//#define DEBUG
 
 // желаемую температуру, дельту температуры, дельту времени, будем хранить в энергонезависимой памяти
 #include <EEPROM.h>
@@ -68,7 +68,8 @@ OneButton minusBtn(8, true);
 const unsigned int RELE_PIN = 9;
 
 enum StateView {
-  MAIN_VIEW = 0 // показываем температуру, влажность, потраченную мощность обогревателем
+  MAIN_VIEW = 0 // показываем температуру и влажность
+  , TIME_VIEW // время работы
   , TEMP // изменяем температуру выключения обогревателя
   , DELTA_TEMP // изменяем delta_temp
   , DELTA_TIME // изменяем delta_time
@@ -154,7 +155,12 @@ void Update()
     last_press_button = 0;
   }
   // обновляем текущую температуру раз N секунд
-  if (t - last_query_sensor > 2000) {
+#if defined(DEBUG)
+const unsigned long CHECK_SENSOR_PAUSE = 2000;
+#else
+const unsigned long CHECK_SENSOR_PAUSE = 4000;
+#endif
+  if (t - last_query_sensor > CHECK_SENSOR_PAUSE) {
     last_query_sensor = t;
 
     float sensor_temp = sensor.readTemperature();
@@ -164,6 +170,8 @@ void Update()
       if (current_humidity > 100.f) {
         current_humidity = 100.f;
       }
+    } else {
+      DebugPrint("Sensor fail.");
     }
 
     if (t - last_change_heater > delta_time)
@@ -205,6 +213,8 @@ void Update()
     EEPROM.update(2, byte(delta_time / 1000));
     DebugPrint("save delta time");
   }
+
+  
 }
 
 void PrintRequireTemperature() {
@@ -260,6 +270,9 @@ void ApplyStateDisplay() {
       lcd.print("humid:");
       display_temp = display_humidity = 0.f;
       break;
+    case TIME_VIEW:
+      lcd.print("Elapsed time:");
+      break;
     case TEMP:
       lcd.print("change req.temp");
       PrintRequireTemperature();
@@ -299,12 +312,27 @@ void UpdateStateDisplay() {
       //DebugPrint(str);
     }
   }
+  else if (state == TIME_VIEW) {
+    char str[17];
+    unsigned long s = millis() / 1000;
+    int d = s / 86400;
+    s -= d * 86400;
+    int h = s / 3600;
+    s -= h * 3600;
+    int m = s / 60;
+    s -= m * 60;
+    const char* f = "%02dd:%02dh:%02dm:%02ds";
+    sprintf(str, f, d, h, m, s);
+    lcd.setCursor(0, 1);
+    lcd.print(str);
+  }
 }
 
 void SelectBtnClick() {
   DebugPrint("click select btn");
   last_press_button = millis();
-  if (state == MAIN_VIEW) state = TEMP;
+  if (state == MAIN_VIEW) state = TIME_VIEW;
+  else if (state == TIME_VIEW) state = TEMP;
   else if (state == TEMP) state = DELTA_TEMP;
   else if (state == DELTA_TEMP) state = DELTA_TIME;
   else if (state == DELTA_TIME) state = MAIN_VIEW;
