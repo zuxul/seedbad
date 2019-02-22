@@ -123,6 +123,11 @@ void DebugPrint(const char* str) {
   Serial.println(str);
 #endif
 }
+void DebugPrint(int i) {
+#ifdef DEBUG
+  Serial.println(i);
+#endif
+}
 
 void SetHeaterState(bool enable) {
   if (heater_state != enable) {
@@ -183,6 +188,7 @@ void Update()
     if (state != MAIN_VIEW) {
       state = MAIN_VIEW;
       ApplyStateDisplay();
+      DebugPrint("Go to main view by timeout");
     }
   }
 
@@ -197,7 +203,7 @@ void Update()
   }
   if (delta_time_to_eeprom.check(t)) {
     EEPROM.update(2, byte(delta_time / 1000));
-    DebugPrint("save required temperature");
+    DebugPrint("save delta time");
   }
 }
 
@@ -236,8 +242,8 @@ void PrintDeltaTime() {
   int s = delta_time / 1000;
   int m = s / 60;
   s -= (m * 60);
-  const char* format = "%i m %i s";
-  sprintf(str, format, m, s);
+  const char* f = "%01im:%02is";
+  sprintf(str, f, m, s);
   lcd.setCursor((15 - strlen(str)) / 2, 1);
   lcd.print(str);
   DebugPrint(str);
@@ -272,22 +278,22 @@ void ApplyStateDisplay() {
 void UpdateStateDisplay() {
   if (state == MAIN_VIEW) {
     char str[8];
-    if (fabs(current_temp - display_temp) > 0.1f) {
+    if (fabs(current_temp - display_temp) > 0.01f) {
       // обновляем температуру
       display_temp = current_temp;
       int v_int = (int)display_temp;
-      int v_fra = (int) ((display_temp - (float)v_int) * 10);
-      sprintf(str, " %d.%d C", v_int, v_fra);
+      int v_fra = (int) ((display_temp - (float)v_int) * 100);
+      sprintf(str, " %d.%02d C", v_int, v_fra);
       lcd.setCursor(15 - strlen(str), 0);
       lcd.print(str);
       DebugPrint(str);
     }
-    if (fabs(current_humidity - display_humidity) > 0.3f) {
+    if (fabs(current_humidity - display_humidity) > 0.1f) {
       // обновляем влажность
       display_humidity = current_humidity;
       int v_int = (int)display_humidity;
-      int v_fra = (int) ((display_humidity - (float)v_int) * 10);
-      sprintf(str, " %d.%d %%", v_int, v_fra);
+      int v_fra = (int) ((display_humidity - (float)v_int) * 100);
+      sprintf(str, " %d.%02d %%", v_int, v_fra);
       lcd.setCursor(15 - strlen(str), 1);
       lcd.print(str);
       //DebugPrint(str);
@@ -327,12 +333,12 @@ void PlusBtnClick() {
       delta_temp_to_eeprom.start();
       break;
     case DELTA_TIME:
-      int dt = delta_time / 1000;
+      int dt = int(delta_time / 1000);
       if (dt < 10) dt++;
       else if (dt < 60) dt += 10;
       else if (dt < max_delta_time) dt += 30;
       if (dt > max_delta_time) dt = max_delta_time;
-      delta_time = dt * 1000;
+      delta_time = 1000 * (unsigned long)dt;
       PrintDeltaTime();
       delta_time_to_eeprom.start();
       break;
@@ -361,12 +367,12 @@ void MinusBtnClick() {
       delta_temp_to_eeprom.start();
       break;
     case DELTA_TIME:
-      int dt = delta_time / 1000;
+      int dt = int(delta_time / 1000);
       if (dt > 60) dt -= 30;
       else if (dt > 10) dt -= 10;
-      else if (dt > min_delta_time) dt++;
+      else if (dt > min_delta_time) dt--;
       if (dt < min_delta_time) dt = min_delta_time;
-      delta_time = dt * 1000;
+      delta_time = 1000 * (unsigned long)dt;
       PrintDeltaTime();
       delta_time_to_eeprom.start();
       break;
@@ -393,13 +399,13 @@ void setup() {
     delta_temp = max_delta_temp;
   }
 
-  byte dt = EEPROM.read(1);
+  byte dt = EEPROM.read(2);
   if (dt < min_delta_time) {
     dt = min_delta_time;
   } else if (dt > max_delta_time) {
     dt = max_delta_time;
   }
-  delta_time = dt * 1000;
+  delta_time = 1000 * (unsigned long)dt;
 
 #ifdef DEBUG
   Serial.print("Required temp:");
